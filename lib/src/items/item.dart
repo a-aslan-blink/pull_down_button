@@ -539,23 +539,30 @@ class _LargeItem extends StatelessWidget {
     final hasLeading = leading != null;
 
     if (hasLeading || hasIcon) {
-      body = Row(
-        children: [
-          if (hasLeading)
-            DefaultTextStyle(
-              style: TextStyle(color: resolvedStyle.color),
-              child: leading!,
-            ),
-          Expanded(child: body),
-          if (hasIcon)
-            Padding(
-              padding: const EdgeInsetsDirectional.only(start: 8),
-              child: IconBox(
-                color: resolvedColor,
-                child: iconWidget ?? Icon(icon),
+      body = Padding(
+        padding: const EdgeInsetsDirectional.symmetric(vertical: 6),
+        child: Row(
+          children: [
+            if (hasLeading)
+              DefaultTextStyle(
+                style: TextStyle(color: resolvedStyle.color),
+                child: leading!,
               ),
-            ),
-        ],
+            Expanded(child: body),
+            if (hasIcon)...[
+              if (iconWidget != null)
+                iconWidget!,
+              if (iconWidget == null)
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(start: 8),
+                  child: IconBox(
+                    color: resolvedColor,
+                    child: Icon(icon),
+                  ),
+                ),
+            ],
+          ],
+        ),
       );
     }
 
