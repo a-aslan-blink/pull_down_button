@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:meta/meta.dart';
 
 import '../pull_down_button.dart';
 import '_internals/extensions.dart';
@@ -41,7 +42,7 @@ enum PullDownMenuItemsOrder {
   /// For example, a list of items (1, 2, 3) will result in the menu rendering
   /// them like this:
   ///
-  /// ```
+  /// ```text
   /// -----
   /// | 1 |
   /// -----
@@ -58,7 +59,7 @@ enum PullDownMenuItemsOrder {
   /// For example, a list of items (1, 2, 3) will result in the menu rendering
   /// them like this:
   ///
-  /// ```
+  /// ```text
   /// -----
   /// | 3 |
   /// -----
@@ -78,7 +79,7 @@ enum PullDownMenuItemsOrder {
   /// For example, a list of items (1, 2, 3) will result in the menu rendering
   /// them like this:
   ///
-  /// ```
+  /// ```text
   /// -----
   /// | 1 |
   /// -----
@@ -94,7 +95,7 @@ enum PullDownMenuItemsOrder {
   /// For example, a list of items (1, 2, 3) will result in the menu rendering
   /// them like this:
   ///
-  /// ```
+  /// ```text
   /// -----
   /// | 3 |
   /// -----
@@ -116,7 +117,11 @@ enum PullDownButtonAnimationState {
 
   /// The menu is opened by calling [showMenu] using
   /// [PullDownButton.buttonBuilder]'s button widget.
-  opened,
+  opened;
+
+  /// Whether the [PullDownMenuButtonBuilder]s button is pressed and the menu
+  /// is open.
+  bool get isOpen => this == PullDownButtonAnimationState.opened;
 }
 
 /// Used to configure what horizontal part of the
@@ -210,6 +215,9 @@ class PullDownButton extends StatefulWidget {
     this.scrollController,
     this.animationBuilder = defaultAnimationBuilder,
     this.routeTheme,
+    this.animationAlignmentOverride,
+    this.useRootNavigator = false,
+    this.routeSettings,
   });
 
   /// Called when the button is pressed to create the items to show in the menu.
@@ -291,6 +299,64 @@ class PullDownButton extends StatefulWidget {
   /// If this property is null, then no animation will be used.
   final PullDownButtonAnimationBuilder? animationBuilder;
 
+  /// Custom animation alignment used to override default one.
+  ///
+  /// This is useful for cases when default animation alignment is not suitable
+  /// enough, for example in cases when its needed to "contain" menu in a
+  /// specific part of the screen.
+  ///
+  /// It is also recommended to change [menuOffset] and / or [buttonAnchor] to
+  /// reach expected results.
+  ///
+  /// All examples assume:
+  /// * Menu is located in the left third of the screen on a wide display,
+  /// such as tablet or desktop.
+  /// * Menu is located in top half of the screen.
+  /// * Default animation alignment resolves to [Alignment.topLeft].
+  ///
+  /// For example, to "flip" menu animation:
+  ///
+  /// ```dart
+  /// PullDownButton(
+  ///   itemBuilder: ...,
+  ///   buttonBuilder: ...,
+  ///   // ignore: invalid_use_of_internal_member
+  ///   menuOffset: PullDownMenuRouteTheme.resolve(
+  ///         context,
+  ///         routeTheme: null,
+  ///       ).width!,
+  ///   animationAlignmentOverride: Alignment.topRight,
+  ///   buttonAnchor: PullDownMenuAnchor.end,
+  /// )
+  /// ```
+  ///
+  /// In the example below, menu gets "moved" by the its width to the left to
+  /// align its right side with [buttonBuilder] and
+  /// [animationAlignmentOverride] is used to override the default animation
+  /// alignment to one that is correct for this specific case.
+  ///
+  /// See also:
+  ///
+  /// * [PullDownMenuRoute.animationAlignment], the default animation alignment
+  /// prediction algorithm.
+  @experimental
+  final Alignment? animationAlignmentOverride;
+
+  /// Whether to use the root navigator to show the pull-down menu.
+  ///
+  /// Defaults to `false`.
+  ///
+  /// This property allows to show the pull-down menu on the root navigator
+  /// instead of the current navigator, useful for nested navigation scenarios
+  /// where the popup menu wouldn't be visible or would be clipped by the
+  /// parent navigators.
+  final bool useRootNavigator;
+
+  /// Optional route settings for the pull-down menu.
+  ///
+  /// See [RouteSettings] for details.
+  final RouteSettings? routeSettings;
+
   /// Default animation builder for [animationBuilder].
   ///
   /// If [state] is [PullDownButtonAnimationState.opened], apply opacity
@@ -300,13 +366,13 @@ class PullDownButton extends StatefulWidget {
     PullDownButtonAnimationState state,
     Widget child,
   ) {
-    final isPressed = state == PullDownButtonAnimationState.opened;
+    final isOpen = state.isOpen;
 
     // All of the values where eyeballed using the iOS 16 Simulator.
     return AnimatedOpacity(
-      opacity: isPressed ? 0.4 : 1,
-      duration: Duration(milliseconds: isPressed ? 100 : 200),
-      curve: isPressed ? Curves.fastLinearToSlowEaseIn : Curves.easeIn,
+      opacity: isOpen ? 0.4 : 1,
+      duration: Duration(milliseconds: isOpen ? 100 : 200),
+      curve: isOpen ? Curves.fastLinearToSlowEaseIn : Curves.easeIn,
       child: child,
     );
   }
@@ -319,11 +385,19 @@ class _PullDownButtonState extends State<PullDownButton> {
   PullDownButtonAnimationState state = PullDownButtonAnimationState.closed;
 
   Future<void> showButtonMenu() async {
-    var button = context.getRect;
+    final navigator = Navigator.of(
+      context,
+      rootNavigator: widget.useRootNavigator,
+    );
+
+    final overlay = navigator.overlay!.context.currentRenderBox;
+    var button = context.getRect(ancestor: overlay);
+
     if (widget.buttonAnchor != null) {
       button = _anchorToButtonPart(context, button, widget.buttonAnchor!);
     }
-    final animationAlignment =
+
+    final animationAlignment = widget.animationAlignmentOverride ??
         PullDownMenuRoute.animationAlignment(context, button);
 
     final items = widget.itemBuilder(context);
@@ -345,6 +419,8 @@ class _PullDownButtonState extends State<PullDownButton> {
       animationAlignment: animationAlignment,
       menuOffset: widget.menuOffset,
       scrollController: widget.scrollController,
+      useRootNavigator: widget.useRootNavigator,
+      routeSettings: widget.routeSettings,
     );
 
     if (!mounted) return;
@@ -400,6 +476,11 @@ class _PullDownButtonState extends State<PullDownButton> {
 /// [routeTheme] is used to define the theme of the route used to display
 /// the pull-down menu launched from this function.
 ///
+/// [useRootNavigator] is used to determine whether to use the root navigator
+/// to show the pull-down menu. Defaults to `false`.
+///
+/// Use [routeSettings] to set optional route settings for the pull-down menu.
+///
 /// See also:
 ///
 /// * [PullDownMenuItem], a pull-down menu entry for a simple action.
@@ -425,6 +506,8 @@ Future<void> showPullDownMenu({
   ScrollController? scrollController,
   PullDownMenuCanceled? onCanceled,
   PullDownMenuRouteTheme? routeTheme,
+  bool useRootNavigator = false,
+  RouteSettings? routeSettings,
 }) async {
   if (items.isEmpty) return;
 
@@ -441,6 +524,8 @@ Future<void> showPullDownMenu({
     animationAlignment: PullDownMenuRoute.animationAlignment(context, position),
     menuOffset: menuOffset,
     scrollController: scrollController,
+    useRootNavigator: useRootNavigator,
+    routeSettings: routeSettings,
   );
 
   if (action != null) {
@@ -463,8 +548,10 @@ Future<VoidCallback?> _showMenu<VoidCallback>({
   required Alignment animationAlignment,
   required double menuOffset,
   required ScrollController? scrollController,
+  required bool useRootNavigator,
+  required RouteSettings? routeSettings,
 }) {
-  final navigator = Navigator.of(context);
+  final navigator = Navigator.of(context, rootNavigator: useRootNavigator);
 
   return navigator.push<VoidCallback>(
     PullDownMenuRoute(
@@ -482,6 +569,7 @@ Future<VoidCallback?> _showMenu<VoidCallback>({
       alignment: animationAlignment,
       menuOffset: menuOffset,
       scrollController: scrollController,
+      settings: routeSettings,
     ),
   );
 }
@@ -496,22 +584,15 @@ Rect _anchorToButtonPart(
 ) {
   final textDirection = Directionality.of(context);
 
-  final double side;
-
-  switch (anchor) {
-    case PullDownMenuAnchor.start:
-      side = textDirection == TextDirection.ltr
-          ? buttonRect.left
-          : buttonRect.right;
-      break;
-    case PullDownMenuAnchor.center:
-      side = buttonRect.center.dx;
-      break;
-    case PullDownMenuAnchor.end:
-      side = textDirection == TextDirection.ltr
-          ? buttonRect.right
-          : buttonRect.left;
-  }
+  final side = switch (anchor) {
+    PullDownMenuAnchor.start when textDirection == TextDirection.ltr =>
+      buttonRect.left,
+    PullDownMenuAnchor.start => buttonRect.right,
+    PullDownMenuAnchor.center => buttonRect.center.dx,
+    PullDownMenuAnchor.end when textDirection == TextDirection.ltr =>
+      buttonRect.right,
+    PullDownMenuAnchor.end => buttonRect.left,
+  };
 
   return Rect.fromLTRB(
     side,
